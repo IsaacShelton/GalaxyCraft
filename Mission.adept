@@ -1,0 +1,94 @@
+
+enum Mission (ENDLESS, TESTING, LVL1, LVL2, LVL3, LVL4, LVL5)
+
+func loadMission(mission Mission) {
+    gamedata.next_id = 1
+    gamedata.ore = 0
+    gamedata.gas = 0
+    gamedata.units.clear()
+    gamedata.resources.clear()
+    gamedata.buildings.clear()
+    gamedata.selection_box = none() ~> <SelectionBox> Optional
+    gamedata.selected_building = none() ~> <usize> Optional
+    gamedata.current_mission = mission
+    gamedata.mission_start_time = glfwGetTime()
+
+    exhaustive switch mission {
+    case Mission::ENDLESS
+        repeat static 7,
+            gamedata.resources.add(Resources(ResourcesKind::ORE, captViewWidth()/2.0f - 128.0f + 32.0f * idx as float, 32.0f, 5000))
+        repeat static 2,
+            gamedata.resources.add(Resources(ResourcesKind::GAS, captViewWidth()/2.0f + 128.0f, 32.0f + 32.0f * idx as float, 5000))
+        gamedata.buildings.add(Building(BuildingKind::CENTER, captViewWidth()/2.0f, captViewHeight()/2.0f))
+        gamedata.units.add(Unit(UnitKind::WORKER, captViewWidth()/2.0f, captViewHeight()/2.0f + 64.0f))
+        gamedata.objective = "Survive"
+    case Mission::TESTING
+        gamedata.units.add(Unit(UnitKind::WORKER, 64.0f, 64.0f))
+        gamedata.units.add(Unit(UnitKind::MARINE, 128.0f, 256.0f))
+        gamedata.units.add(Unit(UnitKind::MARINE, 128.0f, 256.0f))
+        gamedata.units.add(Unit(UnitKind::MARINE, 128.0f, 256.0f))
+        gamedata.units.add(Unit(UnitKind::MARINE, 128.0f, 256.0f))
+        gamedata.units.add(Unit(UnitKind::MARINE, 128.0f, 256.0f))
+        gamedata.resources.add(Resources(ResourcesKind::GAS, captViewWidth() - 96.0f, 64.0f, 1000))
+        gamedata.resources.add(Resources(ResourcesKind::ORE, captViewWidth() - 128.0f, 64.0f, 1000))
+        gamedata.resources.add(Resources(ResourcesKind::ORE, captViewWidth() - 160.0f, 64.0f, 1000))
+        gamedata.resources.add(Resources(ResourcesKind::ORE, captViewWidth() - 196.0f, 80.0f, 1000))
+        gamedata.buildings.add(Building(BuildingKind::CENTER, captViewWidth()/2.0f, captViewHeight()/2.0f))
+        gamedata.buildings.add(Building(BuildingKind::DEPOT, captViewWidth()/2.0f + 128.0f, captViewHeight()/2.0f - 64.0f))
+        gamedata.objective = "Survive"
+    case Mission::LVL1
+        gamedata.units.add(Unit(UnitKind::WORKER, captViewWidth() / 2.0f, captViewHeight() / 2.0f))
+        gamedata.resources.add(Resources(ResourcesKind::ORE, captViewWidth() / 2.0f + 128.0f, captViewHeight() / 2.0f, 50))
+        gamedata.objective = "Mine 50 Ore"
+    case Mission::LVL2
+        gamedata.units.add(Unit(UnitKind::WORKER, captViewWidth() / 2.0f, captViewHeight() / 2.0f))
+        gamedata.ore = 400
+        gamedata.objective = "Build a center"
+    case Mission::LVL3
+        gamedata.buildings.add(Building(BuildingKind::CENTER, captViewWidth()/2.0f, captViewHeight()/2.0f))
+        gamedata.units.add(Unit(UnitKind::WORKER, captViewWidth() / 2.0f + 192.0f, captViewHeight() / 2.0f))
+        gamedata.ore = 50
+        gamedata.objective = "Build another worker"
+    case Mission::LVL4
+        gamedata.buildings.add(Building(BuildingKind::CENTER, captViewWidth()/2.0f, captViewHeight()/2.0f))
+        gamedata.units.add(Unit(UnitKind::WORKER, captViewWidth() / 2.0f + 192.0f, captViewHeight() / 2.0f))
+        gamedata.ore = 200
+        gamedata.objective = "Build a marine"
+    case Mission::LVL5
+        gamedata.buildings.add(Building(BuildingKind::CENTER, captViewWidth()/2.0f, captViewHeight()/2.0f))
+        gamedata.units.add(Unit(UnitKind::WORKER, captViewWidth() / 2.0f + 192.0f, captViewHeight() / 2.0f))
+        repeat static 5,
+            gamedata.resources.add(Resources(ResourcesKind::ORE, captViewWidth() / 2.0f - 64.0f + 32.0f * idx as float, 128.0f, 1000))
+        gamedata.objective = "Harvest all resources"
+    }
+}
+
+func spawnEnemy(kind UnitKind) {
+    const x float = normalizedRandom() < 0.5 ? -16.0f : captViewWidth() + 16.0f
+    const y float = normalizedRandom() * captViewHeight()
+    gamedata.units.add(Unit(kind, x, y))
+    gamedata.playSound(sfx.ling_spawn)
+}
+
+func doMissionSpawning {
+    t double = glfwGetTime() - gamedata.mission_start_time
+
+    exhaustive switch gamedata.current_mission {
+    case Mission::ENDLESS
+        if normalizedRandom() < min(0.003 * sqrt(t - 60.0), 0.2) {
+            spawnEnemy(UnitKind::LING)
+        }
+    case Mission::TESTING
+        if normalizedRandom() < min(0.003 * sqrt(t), 0.2) and gamedata.units.length < 200 {
+            spawnEnemy(UnitKind::LING)
+        }
+    case Mission::LVL1
+    case Mission::LVL2
+    case Mission::LVL3
+    case Mission::LVL4
+    case Mission::LVL5
+        if gamedata.units.length > 5 and normalizedRandom() < 0.001f * (gamedata.units.length as float - 6.0) and gamedata.units.length < 200 {
+            spawnEnemy(UnitKind::LING)
+        }
+    }
+}

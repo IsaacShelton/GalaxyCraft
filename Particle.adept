@@ -1,0 +1,16 @@
+
+record Particle (texture CaptTexture, x, y, w, h float, time_left float) {
+    func update(delta float = 1.0f / 60.0f) {
+        this.time_left -= delta
+    }
+
+    func draw {
+        captDrawTexture(this.texture, this.x, this.y, this.w, this.h)
+    }
+}
+
+func HitParticle(x, y float) Particle {
+    x_dev float = (normalizedRandom() as float - 0.5f) * 32.0f * 0.5
+    y_dev float = (normalizedRandom() as float - 0.5f) * 32.0f * 0.5
+    return Particle(textures.hit, x + x_dev, y + y_dev, 8.0f, 8.0f, 0.1f)
+}

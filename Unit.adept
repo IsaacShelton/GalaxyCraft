@@ -1,0 +1,215 @@
+
+enum UnitKind (WORKER, MARINE, CANNON, LING)
+
+struct Unit (
+    kind UnitKind,
+    x, y float,
+    texture CaptTexture,
+    health, armor int,
+    id usize,
+    target <Vector2f> Optional,
+    timer int,
+    selectable, enemy bool
+) {
+    constructor(kind UnitKind, x, y float) {
+        this.kind = kind
+        this.x = x
+        this.y = y
+        this.armor = 0
+        this.id = gamedata.next_id++
+        this.target = none() ~> <Vector2f> Optional
+        this.timer = 0
+        this.enemy = false
+
+        exhaustive switch this.kind {
+        case UnitKind::WORKER
+            this.texture = textures.worker
+            this.health = 40
+        case UnitKind::MARINE
+            this.texture = textures.marine
+            this.health = 40
+        case UnitKind::CANNON
+            this.texture = textures.cannon
+            this.health = 100
+            this.armor = 2
+        case UnitKind::LING
+            this.texture = textures.ling
+            this.health = 60
+            this.enemy = true
+        }
+
+        this.selectable = !this.enemy
+    }
+
+    func update {
+        exhaustive switch this.kind {
+        case UnitKind::WORKER
+            if this.timer <= 0 {
+                each Resources in gamedata.resources {
+                    if it.left > 0 && this.getAABB().intersecting(it.getAABB()) {
+                        it.mine()
+                        this.timer = 60
+                        break
+                    }
+                }
+            } else {
+                this.timer--
+            }
+        case UnitKind::MARINE
+            if this.timer <= 0 {
+                each Unit in static gamedata.units {
+                    if it.enemy and it.health > 0 and distance(it.x, it.y, this.x, this.y) < 128.0f {
+                        it.damage(10)
+                        gamedata.playSound(sfx.gun)
+                        this.timer = 60
+                        gamedata.particles.add(HitParticle(it.x, it.y))
+                        break
+                    }
+                }
+            } else {
+                this.timer--
+            }
+        case UnitKind::CANNON
+            if this.timer <= 0 {
+                each Unit in static gamedata.units {
+                    if it.enemy and it.health > 0 and distance(it.x, it.y, this.x, this.y) < 192.0f {
+                        it.damage(60)
+                        gamedata.playSound(sfx.cannon)
+                        this.timer = 180
+                        break
+                    }
+                }
+            } else {
+                this.timer--
+            }
+        case UnitKind::LING
+            target Vector2f = Vector2f(captViewWidth() / 2.0f, captViewHeight() / 2.0f)
+            closest *Unit = null
+            closest_distance float = 100000000.0f
+
+            each Unit in static gamedata.units {
+                unless it.enemy {
+                    closeness float = distance(it.x, it.y, this.x, this.y)
+                    if closeness < closest_distance {
+                        closest_distance = closeness
+                        closest = &it
+                    }
+                }
+            }
+
+            if closest != null {
+                target = Vector2f(closest.x, closest.y)
+            }
+
+            this.target = some(target)
+
+            if this.timer <= 0 {
+                each Unit in gamedata.units {
+                    if !it.enemy and it.health > 0 and it.getAABB().intersecting(this.getAABB()) {
+                        it.damage(10)
+                        this.timer = 30
+                        gamedata.playSound(sfx.ling_bite)
+                        break
+                    }
+                }
+            } else {
+                this.timer -= 1
+            }
+        }
+    }
+
+    func damage(amount int) {
+        this.health -= max(amount - this.armor, 0)
+    }
+
+    func playDeathSound {
+        exhaustive switch this.kind {
+        case UnitKind::WORKER
+            gamedata.playSound(sfx.worker_death)
+        case UnitKind::MARINE
+            gamedata.playSound(sfx.marine_death)
+        case UnitKind::CANNON
+            gamedata.playSound(sfx.cannon_death)
+        case UnitKind::LING
+            gamedata.playSound(sfx.ling_death)
+        }
+    }
+
+    func tryPlaceBuilding(kind BuildingKind, ore_cost, gas_cost int) successful {
+        if gamedata.ore < ore_cost or gamedata.gas < gas_cost {
+            gamedata.playSound(sfx.error)
+            return false
+        }
+
+        new_building Building = Building(kind, this.x, this.y)
+
+        each Building in static gamedata.buildings {
+            if it.getAABB().intersecting(new_building.getAABB()) {
+                gamedata.playSound(sfx.error)
+                gamedata.next_id--
+                return false
+            }
+        }
+
+        gamedata.buildings.add(new_building)
+        gamedata.ore -= ore_cost
+        gamedata.gas -= gas_cost
+        return true
+    }
+
+    func pickOption(index usize) successful {
+        exhaustive switch this.kind {
+        case UnitKind::WORKER
+            switch index {
+            case 0
+                return this.tryPlaceBuilding(BuildingKind::CENTER, 400, 0)
+            case 1
+                return this.tryPlaceBuilding(BuildingKind::DEPOT, 150, 0)
+            case 2
+                return this.tryPlaceBuilding(BuildingKind::FACTORY, 150, 50)
+            }
+        case UnitKind::MARINE
+        case UnitKind::CANNON
+        case UnitKind::LING
+        }
+        return false
+    }
+
+    func draw {
+        const width float = 32.0f
+        const height float = 32.0f
+        reversed bool = false
+        
+        if this.kind == UnitKind::LING && this.target.has && this.target.getPointer().x < this.x {
+            reversed = true
+        }
+
+        if reversed {
+            captDrawTexture(this.texture, this.x + width/2.0f, this.y - height/2.0f, -width, height)
+        } else {
+            captDrawTexture(this.texture, this.x - width/2.0f, this.y - height/2.0f, width, height)
+        }
+    }
+
+    func drawSelectionCircle {
+        const width float = 32.0f
+        const height float = 32.0f
+        captDrawTexture(textures.selection, this.x - width/2.0f, this.y - height/2.0f, width, height)
+    }
+
+    func drawOptions {
+        exhaustive switch this.kind {
+        case UnitKind::WORKER
+            drawSingleOption(0, textures.center)
+            drawSingleOption(1, textures.depot)
+            drawSingleOption(2, textures.factory)
+        case UnitKind::MARINE
+        case UnitKind::CANNON
+        case UnitKind::LING
+        }
+    }
+
+    func getAABB <float> AABB {
+        return AABB(this.x - 16.0f, this.y - 16.0f, 32.0f, 32.0f)
+    }
+}

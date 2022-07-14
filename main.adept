@@ -1,0 +1,385 @@
+
+pragma compiler_version '2.7'
+
+#define SAILBOAT_GAME_TITLE            "Galaxy Craft"
+#define SAILBOAT_FULLSCREEN            true
+#define SAILBOAT_USE_MOUSE_VIEW_COORDS true
+
+import basics
+import captain
+import Optional
+import AABB
+import Vector2f
+
+import "GameData.adept"
+import "Textures.adept"
+import "Unit.adept"
+import "Resources.adept"
+import "Building.adept"
+import "SoundEffects.adept"
+import "Particle.adept"
+import "Mission.adept"
+
+func main {
+    captOnSetup(func &onSetup)
+    captOnStep(func &onStep)
+    captOnKey(func &onKey)
+    captOnClick(func &onClick, #get SAILBOAT_USE_MOUSE_VIEW_COORDS)
+    captOnRelease(func &onRelease, #get SAILBOAT_USE_MOUSE_VIEW_COORDS)
+    captOnDraw(func &onDraw)
+    captOnExit(func &onExit)
+    captStart(#get SAILBOAT_GAME_TITLE, #get SAILBOAT_FULLSCREEN)
+}
+
+func onSetup {
+    // Called before the first frame, should be used to load assets and prepare for application loop
+
+    randomize()
+    audioInit()
+    textures.load()
+    gamedata.load()
+    sfx.load()
+}
+
+func onExit {
+    // Called when the application is preparing to close, should be used to free remaining assets
+
+    gamedata.unload()
+    textures.unload()
+    sfx.unload()
+    audioTerminate()
+}
+
+func onStep {
+    // Update selection box
+    if gamedata.selection_box.isSome() {
+        captMouseViewPosition(undef mouse_x float, undef mouse_y float)
+        gamedata.selection_box.value.x2 = mouse_x
+        gamedata.selection_box.value.y2 = mouse_y
+    }
+
+    // Move units
+    each unit Unit in gamedata.units {
+        if unit.target.has && unit.target.getPointer().distance(Vector2f(unit.x, unit.y)) > 2.0 {
+            y_diff float = unit.target.getPointer().y - unit.y
+            x_diff float = unit.target.getPointer().x - unit.x
+            angle float = atan2(y_diff, x_diff)
+            unit.x += 1.5f * cos(angle)
+            unit.y += 1.5f * sin(angle)
+        } else {
+            unit.target.rid()
+        }
+    }
+
+    // Spread units
+    repeat static gamedata.units.length using us_idx {
+        unit *Unit = gamedata.units at us_idx
+
+        for(other_idx usize = us_idx + 1; other_idx < gamedata.units.length; other_idx++){
+            other *Unit = gamedata.units at other_idx
+            closeness float = distance(unit.x, unit.y, other.x, other.y)
+
+            if closeness < 18.0f {
+                y_diff float = unit.y - other.y
+                x_diff float = unit.x - other.x
+                angle float = atan2(y_diff, x_diff)
+                strength float = min(4.0f / closeness, 1.0f)
+                unit.x += strength * cos(angle)
+                unit.y += strength * sin(angle)
+                other.x -= strength * cos(angle)
+                other.y -= strength * sin(angle)
+            }
+        }
+    }
+
+    // Update units
+    each Unit in gamedata.units {
+        it.update()
+    }
+
+    // Remove dead units
+    each Unit in gamedata.units {
+        if it.health <= 0 {
+            it.playDeathSound()
+            gamedata.units.remove(idx--)
+        }
+    }
+
+    // Spawn in lings
+    doMissionSpawning()
+
+    // Update buildings
+    each Building in static gamedata.buildings {
+        it.update()
+    }
+
+    // Update particles and remove old ones
+    each Particle in gamedata.particles {
+        if it.time_left <= 0.0f {
+            gamedata.particles.remove(idx--)
+            continue
+        }
+
+        it.update()
+    }
+}
+
+func onKey(key, _scancode, action, _mods int) {
+    // Called once per keyboard event    
+
+    unless action == GLFW_PRESS, return
+
+    // Key grid
+    // "Q", "W", "E", "R",
+    // "A", "S", "D", "F",
+    // "Z", "X", "C", "V",
+    // "T", "Y", "U", "I"
+
+    grid <long> Array = {
+        GLFW_KEY_Q, GLFW_KEY_W, GLFW_KEY_E, GLFW_KEY_R,
+        GLFW_KEY_A, GLFW_KEY_S, GLFW_KEY_D, GLFW_KEY_F,
+        GLFW_KEY_Z, GLFW_KEY_X, GLFW_KEY_C, GLFW_KEY_V,
+        GLFW_KEY_T, GLFW_KEY_Y, GLFW_KEY_U, GLFW_KEY_I,
+    }
+
+    each grid_key long in static grid {
+        grid_key_idx usize = idx
+
+        if key == grid_key {
+            if gamedata.selected_building.has {
+                each Building in static gamedata.buildings {
+                    if it.id == gamedata.selected_building.get() {
+                        it.pickOption(grid_key_idx)
+                        break
+                    }
+                }
+            } else if gamedata.selection.length > 0 {
+                each Unit in static gamedata.units {
+                    if it.id == gamedata.selection[0] {
+                        it.pickOption(grid_key_idx)
+                        break
+                    }
+                }
+            }
+            break
+        }
+    }
+}
+
+func onClick(mouse_x, mouse_y float, button int) {
+    // Called once per mouse click
+    // 'mouse_x' and 'mouse_y' coords are in view coordinates by default (as set by captOnClick)
+    // Button 1 == left
+    // Button 2 == right
+    // Button 3 == middle
+    // etc.
+
+    if button == 1 {
+        gamedata.selection_box = some(SelectionBox(mouse_x, mouse_y, mouse_x, mouse_y))
+    }
+
+    if button == 2 {
+        captMouseViewPosition(undef mouse_x float, undef mouse_y float)
+
+        each Unit in gamedata.units {
+            if gamedata.selection.contains(it.id) {
+                it.target = some(Vector2f(mouse_x, mouse_y))
+            }
+        }
+    }
+}
+
+func onRelease(mouse_x, mouse_y float, button int) {
+    if button == 1 && gamedata.selection_box.isSome() {
+        box *SelectionBox = gamedata.selection_box.getPointer()
+
+        x float = min(box.x, box.x2)
+        y float = min(box.y, box.y2)
+        w float = max(box.x, box.x2) - x
+        h float = max(box.y, box.y2) - y
+
+        gamedata.selection.clear()
+        gamedata.selection_box = none() ~> <SelectionBox> Optional
+        gamedata.selected_building = none() ~> <usize> Optional
+
+        if w < 4.0f and h < 4.0f {
+            each Building in static gamedata.buildings {
+                if it.getAABB().intersectingPoint(mouse_x, mouse_y) {
+                    gamedata.selected_building = some(it.id)
+
+                    exhaustive switch it.kind {
+                    case BuildingKind::CENTER
+                        gamedata.building_player.play(sfx.center)
+                    case BuildingKind::DEPOT
+                        gamedata.building_player.play(sfx.gunfire)
+                    case BuildingKind::FACTORY
+                        gamedata.building_player.play(sfx.factory)
+                    }
+                    gamedata.building_player.setVolume(0.2)
+
+                    return
+                }
+            }
+        }
+
+        each Unit in static gamedata.units {
+            if(it.selectable && AABB(x, y, w, h).intersectingPoint(it.x, it.y)){
+                gamedata.selection.add(it.id)
+            }
+        }
+    }
+}
+
+func onDraw {
+    // Called once per frame, should be used to render everything
+
+    captClearColor(CaptColor(0.74, 0.71, 0.53, 0.0))
+
+    drawBuildings()
+    drawSelectionCircles()
+    drawResources()
+    drawUnits()
+    drawParticles()
+    drawBuildingsProgress()
+    drawSelectionBox()
+    drawBlankPanel()
+    drawBuildingBox()
+    drawUnitBoxes()
+    drawControlPanel()
+    drawBuildingOptions()
+    drawUnitOptions()
+
+    captDrawText("Ore: " + toString(gamedata.ore), 16.0f, 16.0f)
+    captDrawText("Gas: " + toString(gamedata.gas), 16.0f, 64.0f)
+    objective_text String = "Objective: " + gamedata.objective
+    captDrawText(objective_text, captViewWidth() - captTextCharacterWidthForScale() * objective_text.length as float - 16.0f, 16.0f)
+}
+
+func drawBuildings {
+    each Building in static gamedata.buildings {
+        it.draw()
+    }
+}
+
+func drawSelectionCircles {
+    each Unit in static gamedata.units {
+        if gamedata.selection.contains(it.id) {
+            it.drawSelectionCircle()
+        }
+    }
+}
+
+func drawResources {
+    each Resources in static gamedata.resources {
+        it.draw()
+    }
+}
+
+func drawUnits {
+    each Unit in static gamedata.units {
+        it.draw()
+    }
+}
+
+func drawParticles {
+    each Particle in static gamedata.particles {
+        it.draw()
+    }
+}
+
+func drawBuildingsProgress {
+    each Building in static gamedata.buildings {
+        it.drawProgress()
+    }
+}
+
+func drawSelectionBox {
+    if gamedata.selection_box.isSome() {
+        box *SelectionBox = gamedata.selection_box.getPointer()
+        captDrawTexture(textures.select, box.x, box.y, box.x2 - box.x, box.y2 - box.y)
+    }
+}
+
+func drawBlankPanel {
+    for(x float = 0.0f; x < captViewWidth(); x += 32.0f){
+        captDrawTexture(textures.panel_top, x, captViewHeight() - 128.0f, 32.0f, 32.0f)
+    }
+
+    captDrawTexture(textures.panel_empty, 0.0f, captViewHeight() - 96.0f, captViewWidth(), captViewHeight())
+}
+
+
+func drawSingleOption(index usize, texture CaptTexture) {
+    keys *String = static String {
+        "Q", "W", "E", "R",
+        "A", "S", "D", "F",
+        "Z", "X", "C", "V",
+        "T", "Y", "U", "I"
+    }
+
+    const x_idx usize = index % 4
+    const y_idx usize = index / 4
+    captDrawTexture(texture, 32.0f * x_idx as float + 4.0f, captViewHeight() - 128.0f + y_idx as float * 32.0f + 4.0f, 24.0f, 24.0f)
+    captDrawText(keys[index], x_idx as float * 32.0f + 22.0f, captViewHeight() - 128.0f + y_idx as float * 32.0f + 20.0f, 7.0)
+}
+
+func drawUnitOptions {
+    if gamedata.selection.length > 0 {
+        each Unit in static gamedata.units {
+            if it.id == gamedata.selection[0] {
+                it.drawOptions()
+                break
+            }
+        }
+    }
+}
+
+func drawBuildingOptions {
+    if gamedata.selected_building.has {
+        each Building in static gamedata.buildings {
+            if it.id == gamedata.selected_building.get() {
+                it.drawOptions()
+                return
+            }
+        }
+    }
+}
+
+func drawBuildingBox {
+    if !gamedata.selected_building.has, return
+
+    each Building in static gamedata.buildings {
+        if it.id == gamedata.selected_building.get() {
+            captDrawTexture(it.texture, 128.0f + 16.0f, captViewHeight() - 128.0f + 16.0f, 96.0f, 96.0f)
+            captDrawText(it.name, 256.0f, captViewHeight() - 64.0f)
+            return
+        }
+    }
+}
+
+func drawUnitBoxes {
+    if gamedata.selection.length == 0, return
+
+    count usize = 0
+
+    each unit Unit in static gamedata.units {
+        if count < 16 && gamedata.selection.contains(unit.id) {
+            x_idx usize = count % 4
+            y_idx usize = count / 4
+
+            x float = 128.0f + x_idx as float * 32.0f + 4.0f
+            y float = captViewHeight() - 128.0f + y_idx as float * 32.0f + 4.0f
+            captDrawTexture(textures.select, x, y, 24.0f, 24.0f)
+            captDrawTexture(unit.texture, x, y, 24.0f, 24.0f)
+            count++
+        }
+    }
+}
+
+func drawControlPanel {
+    repeat static 4 using x_idx {
+        repeat static 4 using y_idx {
+            captDrawTexture(textures.button, x_idx as float * 32.0f, captViewHeight() - 128.0f + y_idx as float * 32.0f, 32.0f, 32.0f)
+        }
+    }
+}

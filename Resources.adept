@@ -1,0 +1,49 @@
+
+enum ResourcesKind (ORE, GAS)
+
+struct Resources (kind ResourcesKind, x, y float, left usize, timer int) {
+    constructor(kind ResourcesKind, x, y float, left usize) {
+        this.kind = kind
+        this.x = x
+        this.y = y
+        this.left = left
+        this.timer = 0
+    }
+
+    func mine() bool {
+        rate usize = this.kind == ResourcesKind::ORE ? 5 : 4
+        amount usize = min(this.left, rate)
+        this.left -= amount
+
+        exhaustive switch this.kind {
+        case ResourcesKind::ORE
+            gamedata.ore += amount
+        case ResourcesKind::GAS
+            gamedata.gas += amount
+        }
+        this.timer = 5
+
+        return this.left <= 0
+    }
+
+    func draw {
+        if this.left <= 0, return
+
+        texture CaptTexture
+
+        exhaustive switch this.kind {
+        case ResourcesKind::ORE
+            texture = textures.ore
+        case ResourcesKind::GAS
+            texture = textures.gas
+        }
+
+        const width float = 32.0f
+        const height float = 32.0f
+        captDrawTexture(texture, this.x - width/2.0f, this.y - height/2.0f, width, height)
+    }
+
+    func getAABB <float> AABB {
+        return AABB(this.x - 16.0f, this.y - 16.0f, 32.0f, 32.0f)
+    }
+}

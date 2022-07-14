@@ -1,0 +1,75 @@
+
+import 'main.adept'
+
+record SelectionBox (x, y, x2, y2 float)
+record PlayingSound (player SoundPlayer, buffer_id uint)
+
+// Data is put here.
+// Everything except textures belongs in here.
+// Textures should instead by put inside the 'Textures' struct
+struct GameData (
+    ore, gas int,
+    next_id usize,
+    units <Unit> List,
+    selection_box <SelectionBox> Optional,
+    selection <usize> List,
+    resources <Resources> List,
+    buildings <Building> List,
+    selected_building <usize> Optional,
+    playing_sounds <PlayingSound> List,
+    building_player SoundPlayer,
+    particles <Particle> List,
+    current_mission Mission,
+    mission_start_time double,
+    objective String,
+) {
+    func load {
+        loadMission(Mission::ENDLESS)
+        this.building_player.create()
+        this.playing_sounds.clear()
+    }
+
+    func unload {
+        this.building_player.destroy()
+
+        each PlayingSound in static this.playing_sounds {
+            it.player.destroy()
+        }
+    }
+    
+    func reset {
+        this.unload()
+        this.__defer__()
+        memset(this, 0, sizeof(*this))
+        this.load()
+    }
+
+    func playSound(sound Sound) {
+        // Remove dead sounds
+        each PlayingSound in this.playing_sounds {
+            unless it.player.isPlaying() {
+                it.player.destroy()
+                this.playing_sounds.remove(idx--)
+            }
+        }
+
+        // Count existing similar sounds
+        count usize = 0
+        each PlayingSound in this.playing_sounds {
+            if it.buffer_id == sound.buffer_id {
+                count++
+            }
+        }
+
+        // Try play new sound
+        if count < 4 && this.playing_sounds.length < 64 {
+            player SoundPlayer
+            player.create()
+            player.play(sound)
+            player.setVolume(0.2)
+            this.playing_sounds.add(PlayingSound(player, sound.buffer_id))
+        }
+    }
+}
+
+gamedata GameData

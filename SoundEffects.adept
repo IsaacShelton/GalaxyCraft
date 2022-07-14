@@ -1,0 +1,64 @@
+
+import audio
+
+struct SoundEffects (
+    cannon,
+    cannon_death,
+    cannon_ready,
+    center,
+    drill,
+    error,
+    factory,
+    gun,
+    gunfire,
+    heavy_gun,
+    ling_bite,
+    ling_death,
+    ling_spawn,
+    marine_death,
+    marine_ready,
+    worker_death,
+    worker_ready Sound
+) {
+    func load {
+        this.cannon.load(where() + "assets/sfx/cannon.wav", false, 1.0f)
+        this.cannon_death.load(where() + "assets/sfx/cannon_death.wav", false, 1.0f)
+        this.cannon_ready.load(where() + "assets/sfx/cannon_ready.wav", false, 1.0f)
+        this.center.load(where() + "assets/sfx/center.wav", false, 1.0f)
+        this.drill.load(where() + "assets/sfx/drill.wav", false, 1.0f)
+        this.error.load(where() + "assets/sfx/error.wav", false, 1.0f)
+        this.factory.load(where() + "assets/sfx/factory.wav", false, 1.0f)
+        this.gun.load(where() + "assets/sfx/gun.wav", false, 1.0f)
+        this.gunfire.load(where() + "assets/sfx/gunfire.wav", false, 1.0f)
+        this.heavy_gun.load(where() + "assets/sfx/heavy_gun.wav", false, 1.0f)
+        this.ling_bite.load(where() + "assets/sfx/ling_bite.wav", false, 1.0f)
+        this.ling_death.load(where() + "assets/sfx/ling_death.wav", false, 1.0f)
+        this.ling_spawn.load(where() + "assets/sfx/ling_spawn.wav", false, 1.0f)
+        this.marine_death.load(where() + "assets/sfx/marine_death.wav", false, 1.0f)
+        this.marine_ready.load(where() + "assets/sfx/marine_ready.wav", false, 1.0f)
+        this.worker_death.load(where() + "assets/sfx/worker_death.wav", false, 1.0f)
+        this.worker_ready.load(where() + "assets/sfx/worker_ready.wav", false, 1.0f)
+    }
+
+    func unload {
+        this.cannon.destroy()
+        this.cannon_death.destroy()
+        this.cannon_ready.destroy()
+        this.center.destroy()
+        this.drill.destroy()
+        this.error.destroy()
+        this.factory.destroy()
+        this.gun.destroy()
+        this.gunfire.destroy()
+        this.heavy_gun.destroy()
+        this.ling_bite.destroy()
+        this.ling_death.destroy()
+        this.ling_spawn.destroy()
+        this.marine_death.destroy()
+        this.marine_ready.destroy()
+        this.worker_death.destroy()
+        this.worker_ready.destroy()
+    }
+}
+
+sfx SoundEffects
